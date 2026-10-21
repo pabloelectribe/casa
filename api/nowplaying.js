@@ -1,21 +1,8 @@
 // GET /api/nowplaying?url=<stream>
 // Lee el primer bloque de metadatos ICY del stream para mostrar "Artista - Canción".
-const { UA, send } = require('./_lib');
-const net = require('node:net');
+const { UA, send, isPrivateHost } = require('./_lib');
 
 const MAX_BYTES = 256 * 1024;
-
-function isPrivateHost(hostname) {
-  const host = hostname.replace(/^\[|\]$/g, '').toLowerCase();
-  if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal')) return true;
-  if (net.isIPv4(host)) {
-    const [a, b] = host.split('.').map(Number);
-    return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
-  }
-  if (net.isIPv6(host)) return host === '::1' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80');
-  return false;
-}
 
 async function readIcyTitle(streamUrl) {
   const res = await fetch(streamUrl, {

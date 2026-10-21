@@ -451,6 +451,72 @@
 
   var audio = $('player');
 
+  // Campana sintetizada con Web Audio. iOS exige crear/reanudar el contexto
+  // dentro de un toque; después puede sonar sola desde un temporizador.
+  var Chime = {
+    Ctx: window.AudioContext || window.webkitAudioContext,
+    ctx: null,
+    loop: null,
+
+    unlock: function () {
+      if (!Chime.Ctx) return;
+      try {
+        if (!Chime.ctx) Chime.ctx = new Chime.Ctx();
+        if (Chime.ctx.resume) Chime.ctx.resume();
+        var src = Chime.ctx.createBufferSource();
+        src.buffer = Chime.ctx.createBuffer(1, 1, 22050);
+        src.connect(Chime.ctx.destination);
+        Chime.startNode(src, 0);
+      } catch (e) { /* sin Web Audio: queda el <audio> */ }
+    },
+
+    startNode: function (node, when) {
+      if (node.start) node.start(when); else node.noteOn(when);
+    },
+
+    stopNode: function (node, when) {
+      if (node.stop) node.stop(when); else node.noteOff(when);
+    },
+
+    bell: function (freq, at) {
+      var ctx = Chime.ctx;
+      var partials = [[1, 0.5, 1.6], [2.76, 0.18, 1.0], [5.4, 0.08, 0.5]];
+      for (var i = 0; i < partials.length; i++) {
+        var osc = ctx.createOscillator();
+        var gain = ctx.createGain();
+        osc.frequency.value = freq * partials[i][0];
+        gain.gain.setValueAtTime(0.0001, at);
+        gain.gain.exponentialRampToValueAtTime(partials[i][1], at + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, at + partials[i][2]);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        Chime.startNode(osc, at);
+        Chime.stopNode(osc, at + partials[i][2] + 0.05);
+      }
+    },
+
+    ring: function () {
+      if (!Chime.ctx) return;
+      if (Chime.ctx.resume) Chime.ctx.resume();
+      var t = Chime.ctx.currentTime + 0.05;
+      Chime.bell(1318.5, t);
+      Chime.bell(1046.5, t + 0.22);
+      Chime.bell(1318.5, t + 0.44);
+    },
+
+    start: function () {
+      Chime.stop();
+      if (!Chime.ctx) return;
+      Chime.ring();
+      Chime.loop = setInterval(Chime.ring, 1800);
+    },
+
+    stop: function () {
+      if (Chime.loop) clearInterval(Chime.loop);
+      Chime.loop = null;
+    }
+  };
+
   var Player = {
     mode: 'idle',          // 'idle' | 'radio' | 'alarm'
     state: 'stopped',      // 'stopped' | 'loading' | 'playing' | 'error'
@@ -461,8 +527,12 @@
     track: '',
     unlocked: false,
     nowTimer: null,
+    watchdog: null,
+    // Emisoras que no conectaron directo y se escuchan vía /api/stream.
+    relayed: store.get('relayed', {}),
 
     unlock: function () {
+      Chime.unlock();
       if (Player.unlocked) return;
       Player.unlocked = true;
       if (Player.mode !== 'idle') return;
@@ -480,14 +550,54 @@
       Player.retries = 0;
       Player.track = '';
       Player.setState('loading');
-      audio.loop = false;
-      audio.src = Player.station.url;
-      playSafe(audio);
+      Player.connect();
       Player.pollNowPlaying(true);
       Player.render();
     },
 
+    connect: function () {
+      var st = Player.station;
+      audio.loop = false;
+      audio.src = Player.relayed[st.id] ? '/api/stream?' + q({ url: st.url }) : st.url;
+      playSafe(audio);
+      Player.watch();
+    },
+
+    // Si en 12 s no empezó a sonar, se considera una falla (iOS a veces se queda colgado).
+    watch: function () {
+      clearTimeout(Player.watchdog);
+      Player.watchdog = setTimeout(function () {
+        if (Player.mode === 'radio' && Player.state === 'loading') Player.fail();
+      }, 12000);
+    },
+
+    fail: function () {
+      if (Player.mode !== 'radio') return;
+      var st = Player.station;
+      if (!Player.relayed[st.id]) {
+        // Primer intento fallido: probablemente HTTPS que iOS 9 no soporta. Usar el relevo.
+        Player.relayed[st.id] = true;
+        store.set('relayed', Player.relayed);
+        Player.setState('loading');
+        Player.connect();
+        return;
+      }
+      if (Player.retries < 3) {
+        Player.retries++;
+        Player.setState('loading');
+        setTimeout(function () {
+          if (Player.mode === 'radio' && Player.station === st) Player.connect();
+        }, 2000 * Player.retries);
+      } else {
+        clearTimeout(Player.watchdog);
+        Player.mode = 'idle';
+        Player.pollNowPlaying(false);
+        Player.setState('error');
+      }
+    },
+
     stop: function () {
+      clearTimeout(Player.watchdog);
       Player.mode = 'idle';
       audio.pause();
       audio.removeAttribute('src');
@@ -539,11 +649,15 @@
     },
 
     // --- alarma ---
+    // Suena por dos vías a la vez: Web Audio (Chime) y el <audio>. En iOS 9 el
+    // <audio> a veces no arranca sin un toque, y Web Audio calla con el
+    // interruptor de silencio; con las dos, al menos una suena.
     alarmStart: function () {
       if (Player.mode === 'alarm') return;
       Player.resumeRadio = Player.mode === 'radio' && Player.state !== 'stopped';
       Player.pollNowPlaying(false);
       Player.mode = 'alarm';
+      Chime.start();
       audio.loop = true;
       audio.src = '/sounds/alarm.wav';
       playSafe(audio);
@@ -552,6 +666,7 @@
 
     alarmSilence: function () {
       if (Player.mode !== 'alarm') return;
+      Chime.stop();
       audio.pause();
       audio.loop = false;
       Player.mode = 'idle';
@@ -622,10 +737,20 @@
     }
   });
   audio.addEventListener('waiting', function () {
-    if (Player.mode === 'radio') Player.setState('loading');
+    if (Player.mode !== 'radio') return;
+    Player.setState('loading');
+    Player.watch();
+  });
+  audio.addEventListener('ended', function () {
+    // El relevo se corta cada ~5 min (límite de Vercel): reconectar sin que se note.
+    if (Player.mode === 'radio') {
+      Player.setState('loading');
+      Player.connect();
+    }
   });
   audio.addEventListener('pause', function () {
     // Pausa externa (p.ej. otra app tomó el audio): reflejarlo en la UI.
+    if (audio.ended) return;
     if (Player.mode === 'radio' && Player.state === 'playing') {
       Player.mode = 'idle';
       Player.pollNowPlaying(false);
@@ -633,20 +758,7 @@
     }
   });
   audio.addEventListener('error', function () {
-    if (Player.mode !== 'radio') return;
-    if (Player.retries < 3) {
-      Player.retries++;
-      Player.setState('loading');
-      setTimeout(function () {
-        if (Player.mode !== 'radio') return;
-        audio.src = Player.station.url;
-        playSafe(audio);
-      }, 2000 * Player.retries);
-    } else {
-      Player.mode = 'idle';
-      Player.pollNowPlaying(false);
-      Player.setState('error');
-    }
+    Player.fail();
   });
 
   var ART_COLORS = [
@@ -1104,6 +1216,12 @@
 
     'alarm-stop': function () { Alarm.stop(false); },
     'alarm-snooze': function () { Alarm.stop(true); },
+    'alarm-test': function () {
+      if (Alarm.active || Player.mode === 'alarm') return;
+      Player.unlock();
+      Player.alarmStart();
+      setTimeout(function () { if (!Alarm.active) Player.alarmStop(); }, 4000);
+    },
 
     'radio-toggle': function () { Player.toggle(); },
     'radio-next': function () { Player.step(1); },
