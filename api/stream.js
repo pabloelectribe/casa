@@ -43,6 +43,28 @@ module.exports = async (req, res) => {
     return send(res, 502, { error: 'stream_unavailable', status: upstream.status });
   }
 
+  // ?probe=1: diagnóstico. Lee 3 s del stream y responde qué llegó, sin reproducir.
+  if (req.query.probe) {
+    const reader = upstream.body.getReader();
+    const started = Date.now();
+    let bytes = 0;
+    try {
+      while (Date.now() - started < 3000) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        bytes += value.length;
+      }
+    } catch { /* corte del upstream */ }
+    reader.cancel().catch(() => {});
+    return send(res, 200, {
+      status: upstream.status,
+      finalUrl: upstream.url,
+      contentType: ct,
+      bytesIn3s: bytes,
+      region: process.env.VERCEL_REGION || null,
+    });
+  }
+
   res.statusCode = 200;
   res.setHeader('Content-Type', contentType(ct, url.pathname));
   res.setHeader('Cache-Control', 'no-store');
