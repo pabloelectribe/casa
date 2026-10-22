@@ -7,6 +7,8 @@ const { UA, send, isPrivateHost } = require('./_lib');
 
 function contentType(upstream, url) {
   const ct = (upstream || '').split(';')[0].trim().toLowerCase();
+  // Safari no reconoce "audio/aacp" (AAC+ de Shoutcast/Icecast) aunque sí sabe decodificarlo.
+  if (/^audio\/(aacp|aac\+|x-aac|x-aacp)$/.test(ct)) return 'audio/aac';
   if (ct.startsWith('audio/')) return ct;
   if (/\.aac(\?|$)|\/aac\//i.test(url)) return 'audio/aac';
   return 'audio/mpeg';

@@ -13,14 +13,27 @@
     'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
   var SOMA = 'https://ice1.somafm.com/';
-  var DEFAULT_FAVORITES = [
+  var BIOBIO = 'https://unlimited3-cl.dps.live/';
+  var BIOBIO_ICON = 'https://www.biobiochile.cl/assets/biobiochile/img/icons/apple-touch-icon-120x120.png';
+  // Radios que se agregaron a las favoritas después de la primera versión.
+  var NEW_FAVORITES = [
+    { id: 'biobio-temuco', name: 'BioBio Temuco', url: BIOBIO + 'biobiotemuco/mp3/icecast.audio', favicon: BIOBIO_ICON, tags: 'noticias · Araucanía' },
+    { id: 'biobio-santiago', name: 'BioBio Santiago', url: BIOBIO + 'biobiosantiago/mp3/icecast.audio', favicon: BIOBIO_ICON, tags: 'noticias · Santiago' }
+  ];
+  var FAVORITES_VERSION = 2;
+  var DEFAULT_FAVORITES = NEW_FAVORITES.concat([
     { id: 'soma-groovesalad', name: 'Groove Salad', url: SOMA + 'groovesalad-128-mp3', tags: 'chill, downtempo · SomaFM' },
     { id: 'soma-secretagent', name: 'Secret Agent', url: SOMA + 'secretagent-128-mp3', tags: 'lounge, jazz · SomaFM' },
     { id: 'soma-lush', name: 'Lush', url: SOMA + 'lush-128-mp3', tags: 'voces suaves, electrónica · SomaFM' },
     { id: 'soma-indiepop', name: 'Indie Pop Rocks!', url: SOMA + 'indiepop-128-mp3', tags: 'indie pop · SomaFM' },
     { id: 'soma-u80s', name: 'Underground 80s', url: SOMA + 'u80s-128-mp3', tags: 'new wave, synth pop · SomaFM' },
     { id: 'soma-bossa', name: 'Bossa Beyond', url: SOMA + 'bossa-128-mp3', tags: 'bossa nova · SomaFM' }
-  ];
+  ]);
+  var SOMA_FAVORITES = DEFAULT_FAVORITES.slice(NEW_FAVORITES.length);
+
+  // iOS 9 o anterior no abre muchos streams directo (HTTPS moderno, "audio/aacp"):
+  // ahí siempre se escucha a través de /api/stream.
+  var OLD_IOS = /\bOS [1-9]_\d.* like Mac OS X/.test(window.navigator.userAgent);
 
   var DEFAULT_SETTINGS = {
     city: 'Santiago',
@@ -558,7 +571,7 @@
     connect: function () {
       var st = Player.station;
       audio.loop = false;
-      audio.src = Player.relayed[st.id] ? '/api/stream?' + q({ url: st.url }) : st.url;
+      audio.src = OLD_IOS || Player.relayed[st.id] ? '/api/stream?' + q({ url: st.url }) : st.url;
       playSafe(audio);
       Player.watch();
     },
@@ -574,7 +587,7 @@
     fail: function () {
       if (Player.mode !== 'radio') return;
       var st = Player.station;
-      if (!Player.relayed[st.id]) {
+      if (!OLD_IOS && !Player.relayed[st.id]) {
         // Primer intento fallido: probablemente HTTPS que iOS 9 no soporta. Usar el relevo.
         Player.relayed[st.id] = true;
         store.set('relayed', Player.relayed);
@@ -1038,7 +1051,7 @@
       } else if (tab === 'cl') {
         Sheet.fetch('cl', { country: 'CL' });
       } else if (tab === 'chill') {
-        Sheet.fetch('chill', { tag: 'chillout' }, DEFAULT_FAVORITES);
+        Sheet.fetch('chill', { tag: 'chillout' }, SOMA_FAVORITES);
       } else {
         var last = Sheet.cache['search'];
         Sheet.renderList(last || [], 'Escribe el nombre de una radio o un estilo.');
@@ -1302,6 +1315,22 @@
     Timers.list = out;
     if (out.length) Timers.view = 'list';
   })();
+
+  // Agrega las favoritas nuevas a quienes ya tenían una lista guardada.
+  if (store.get('favVersion', 1) < FAVORITES_VERSION) {
+    var oldDefault = !Player.station || Player.station.id === 'soma-groovesalad';
+    var additions = [];
+    for (var f = 0; f < NEW_FAVORITES.length; f++) {
+      if (!Player.isFavorite(NEW_FAVORITES[f].id)) additions.push(NEW_FAVORITES[f]);
+    }
+    Player.favorites = additions.concat(Player.favorites);
+    store.set('favorites', Player.favorites);
+    if (oldDefault) {
+      Player.station = NEW_FAVORITES[0];
+      store.set('station', Player.station);
+    }
+    store.set('favVersion', FAVORITES_VERSION);
+  }
 
   applySettings();
   Clock.render(new Date());
