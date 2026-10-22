@@ -72,7 +72,13 @@ module.exports = async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Access-Control-Allow-Origin', '*');
 
+  const started = Date.now();
+  let sent = 0;
+  console.log(`[stream] start ${url.host}${url.pathname} ct=${ct} range=${req.headers.range || '-'} ua=${String(req.headers['user-agent'] || '').slice(0, 80)}`);
+  res.on('close', () => console.log(`[stream] end ${url.host} bytes=${sent} ms=${Date.now() - started}`));
+
   const body = Readable.fromWeb(upstream.body);
+  body.on('data', (chunk) => { sent += chunk.length; });
   body.on('error', () => res.end());
   body.pipe(res);
 };

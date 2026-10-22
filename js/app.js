@@ -464,6 +464,35 @@
 
   var audio = $('player');
 
+  // Diagnóstico remoto: eventos del reproductor a los logs de Vercel (/api/log).
+  var debugCount = 0;
+  function debug(event, data) {
+    if (debugCount++ > 200) return;
+    try {
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', '/api/log?' + q({ e: event, d: JSON.stringify(data || {}) }), true);
+      xhr.send();
+    } catch (e) { /* solo diagnóstico */ }
+  }
+  function mediaState() {
+    var err = audio.error;
+    return {
+      src: String(audio.currentSrc || audio.src || '').slice(-90),
+      err: err ? err.code : null,
+      net: audio.networkState,
+      ready: audio.readyState,
+      t: Math.round(audio.currentTime * 10) / 10,
+      mode: Player.mode,
+      state: Player.state
+    };
+  }
+  ['loadstart', 'loadedmetadata', 'canplay', 'playing', 'waiting', 'stalled', 'suspend', 'error', 'ended', 'abort', 'emptied']
+    .forEach(function (name) {
+      audio.addEventListener(name, function () {
+        if (Player.mode === 'radio' || name === 'error') debug('audio-' + name, mediaState());
+      });
+    });
+
   // Campana sintetizada con Web Audio. iOS exige crear/reanudar el contexto
   // dentro de un toque; después puede sonar sola desde un temporizador.
   var Chime = {
@@ -563,6 +592,7 @@
       Player.retries = 0;
       Player.track = '';
       Player.setState('loading');
+      debug('radio-play', { name: Player.station.name, url: Player.station.url, oldIos: OLD_IOS });
       Player.connect();
       Player.pollNowPlaying(true);
       Player.render();
@@ -580,7 +610,10 @@
     watch: function () {
       clearTimeout(Player.watchdog);
       Player.watchdog = setTimeout(function () {
-        if (Player.mode === 'radio' && Player.state === 'loading') Player.fail();
+        if (Player.mode === 'radio' && Player.state === 'loading') {
+          debug('watchdog', mediaState());
+          Player.fail();
+        }
       }, 12000);
     },
 
