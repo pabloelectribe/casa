@@ -159,6 +159,14 @@
     if (p && typeof p.then === 'function') p.then(null, function () {});
   }
 
+  // En iOS 9, cambiar src y llamar play() de inmediato deja la carga "suspendida"
+  // para siempre (nunca pide el archivo). Hay que llamar load() entre medio.
+  function loadAndPlay(media, url) {
+    media.src = url;
+    media.load();
+    playSafe(media);
+  }
+
   var settings = extend({}, DEFAULT_SETTINGS, store.get('settings', null));
   function saveSettings() { store.set('settings', settings); }
 
@@ -486,7 +494,7 @@
       state: Player.state
     };
   }
-  ['loadstart', 'loadedmetadata', 'canplay', 'playing', 'waiting', 'stalled', 'suspend', 'error', 'ended', 'abort', 'emptied']
+  ['play', 'loadstart', 'loadeddata', 'loadedmetadata', 'canplay', 'playing', 'waiting', 'stalled', 'suspend', 'error', 'ended', 'abort', 'emptied']
     .forEach(function (name) {
       audio.addEventListener(name, function () {
         if (Player.mode === 'radio' || name === 'error') debug('audio-' + name, mediaState());
@@ -578,8 +586,7 @@
       if (Player.unlocked) return;
       Player.unlocked = true;
       if (Player.mode !== 'idle') return;
-      audio.src = '/sounds/silence.wav';
-      playSafe(audio);
+      loadAndPlay(audio, '/sounds/silence.wav');
     },
 
     play: function (station) {
@@ -601,8 +608,7 @@
     connect: function () {
       var st = Player.station;
       audio.loop = false;
-      audio.src = OLD_IOS || Player.relayed[st.id] ? '/api/stream?' + q({ url: st.url }) : st.url;
-      playSafe(audio);
+      loadAndPlay(audio, OLD_IOS || Player.relayed[st.id] ? '/api/stream?' + q({ url: st.url }) : st.url);
       Player.watch();
     },
 
@@ -705,8 +711,7 @@
       Player.mode = 'alarm';
       Chime.start();
       audio.loop = true;
-      audio.src = '/sounds/alarm.wav';
-      playSafe(audio);
+      loadAndPlay(audio, '/sounds/alarm.wav');
       Player.render();
     },
 
