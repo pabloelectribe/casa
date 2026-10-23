@@ -601,6 +601,46 @@ input {
 @-webkit-keyframes spin { to { -webkit-transform: rotate(360deg); } }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* Selector Radio | Spotify */
+.seg {
+  display: -webkit-flex;
+  display: flex;
+  padding: 3px;
+  border-radius: 17px;
+  background: rgba(0, 0, 0, .2);
+}
+.seg button {
+  height: 28px;
+  padding: 0 13px;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, .8);
+}
+.seg button.active { background: #fff; color: #b23a2c; }
+
+.card-music.is-spotify { background-image: linear-gradient(160deg, #1fb954 0%, #0b5229 100%); }
+.is-spotify .seg button.active { color: #0b5229; }
+.is-spotify .ctl-main { color: #0b5229; }
+.is-spotify .ctl-main:active { background: #dcf5e5; }
+.is-spotify .spinner { border-color: rgba(11, 82, 41, .25); border-top-color: #0b5229; }
+.is-spotify .art { background-image: linear-gradient(135deg, #1ed760, #0b5229); }
+.art svg { position: relative; }
+
+.m-progress {
+  position: relative;
+  height: 4px;
+  margin-top: 14px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, .25);
+}
+.m-progress i {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  background: #fff;
+}
+
 /* ---------- Hojas (emisoras / ajustes) ---------- */
 
 .sheet {
@@ -745,6 +785,39 @@ input {
   font-size: 18px;
   color: rgba(255, 255, 255, .5);
 }
+
+/* Dispositivos de Spotify */
+.vol-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  padding-bottom: 16px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, .07);
+}
+.vol-row .btn { width: 150px; }
+.vol-value { text-align: center; font-size: 40px; font-weight: 300; line-height: 1; }
+.vol-value small { display: block; font-size: 13px; color: rgba(255, 255, 255, .5); margin-top: 4px; }
+.dev {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  width: 100%;
+  padding: 14px 12px;
+  border-radius: 14px;
+  text-align: left;
+  font-size: 19px;
+  font-weight: 600;
+}
+.dev:active { background: rgba(255, 255, 255, .06); }
+.dev small { display: block; font-size: 14px; font-weight: 500; color: rgba(255, 255, 255, .45); }
+.dev .dev-icon { width: 30px; margin-right: 14px; color: rgba(255, 255, 255, .6); }
+.dev.active { color: #1ed760; }
+.dev.active .dev-icon { color: #1ed760; }
 
 /* Ajustes */
 .settings-body { -webkit-flex: 1; flex: 1; padding-bottom: 20px; }

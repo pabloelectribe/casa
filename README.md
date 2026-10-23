@@ -25,6 +25,8 @@ api/*.js            funciones serverless de Vercel (Node moderno)
   geocode.js        búsqueda de ciudades para Ajustes
   radio.js          lista de emisoras filtrada a MP3/AAC
   nowplaying.js     título de la canción (metadatos ICY)
+  stream.js         relevo de audio para iOS 9 (HTTPS moderno y "audio/aacp")
+  spotify/[action]  control remoto de Spotify Connect
 sounds/             alarma y un silencio para "desbloquear" el audio en iOS
 scripts/            generador de sonidos/íconos y servidor local
 ```
@@ -63,12 +65,14 @@ iOS 9 es anterior a algunos certificados raíz actuales (por ejemplo ISRG Root X
 Si la página no carga por un error de certificado, en el iPad abre `http://x1.i.lencr.org/` (es HTTP a
 propósito), instala el perfil que ofrece y vuelve a intentar.
 
-## ¿Y Spotify?
+## Spotify (control remoto)
 
-La app de Spotify ya no existe para iOS 9 y el reproductor web no funciona en Safari 9, así que el iPad no
-puede *reproducir* Spotify. Opciones:
+El iPad no puede reproducir Spotify, pero sí controlarlo mientras suena en un celular, computador o
+parlante con Spotify Connect: carátula, canción, play/pausa, siguiente, volumen y elegir dispositivo.
+Si suena un temporizador, Spotify se pausa y vuelve al detener la alarma. Requiere **Spotify Premium**.
 
-- **Radio por internet** (lo que ya está): suena directo en el iPad.
-- **Control remoto de Spotify Connect** (próximo paso posible): la música suena en un parlante, el celular o un
-  computador, y el iPad muestra la carátula y controla play/pausa/siguiente usando la API web de Spotify.
-  Requiere Spotify Premium y registrar una app en developer.spotify.com.
+Configuración (desde un celular o computador): abre `/spotify.html` en la URL de la app y sigue los pasos.
+Se necesitan tres variables de entorno en Vercel: `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` y
+`SPOTIFY_REFRESH_TOKEN` (esta última la entrega `/api/spotify/login` al terminar).
+
+Todo pasa por `api/spotify/[action].js`: el iPad nunca habla directo con Spotify.

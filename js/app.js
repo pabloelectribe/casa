@@ -122,7 +122,10 @@
     }
   };
 
-  function getJSON(url, cb) {
+  function getJSON(url, cb) { requestJSON('GET', url, cb); }
+  function postJSON(url, cb) { requestJSON('POST', url, cb); }
+
+  function requestJSON(method, url, cb) {
     var xhr = new XMLHttpRequest();
     var done = false;
     function finish(err, data) {
@@ -130,7 +133,7 @@
       done = true;
       cb(err, data);
     }
-    xhr.open('GET', url, true);
+    xhr.open(method, url, true);
     xhr.timeout = 15000;
     xhr.onreadystatechange = function () {
       if (xhr.readyState !== 4) return;
@@ -595,6 +598,7 @@
         store.set('station', station);
       }
       if (!Player.station) return;
+      Spotify.pauseFor('radio');
       Player.mode = 'radio';
       Player.retries = 0;
       Player.track = '';
@@ -761,6 +765,7 @@
     },
 
     render: function () {
+      if (Music.source !== 'radio') return;
       var st = Player.station;
       $('mStation').textContent = st ? st.name : 'Elige una emisora';
       renderArt($('mArt'), st);
@@ -1040,6 +1045,7 @@
       $('alarm').classList.remove('hidden');
       Night.apply();
       Player.alarmStart();
+      Spotify.pauseFor('alarm');
       clearTimeout(Alarm.silenceTimer);
       Alarm.silenceTimer = setTimeout(Player.alarmSilence, ALARM_SOUND_MAX);
     },
@@ -1055,7 +1061,286 @@
         Timers.render();
       }
       if (Player.mode === 'alarm') Player.alarmStop();
+      Spotify.resumeAfterAlarm();
       Night.apply();
+    }
+  };
+
+  /* ------------------------------------------------------------------ */
+  /* Música: Radio (en el iPad) o Spotify (control remoto de otro equipo) */
+  /* ------------------------------------------------------------------ */
+
+  var Music = {
+    source: store.get('musicSource', 'radio') === 'spotify' ? 'spotify' : 'radio',
+
+    set: function (source) {
+      if (source === Music.source) return;
+      Music.source = source;
+      store.set('musicSource', source);
+      $('mArt').removeAttribute('data-key');
+      Music.render();
+      if (source === 'spotify') Spotify.poll();
+    },
+
+    render: function () {
+      var spotify = Music.source === 'spotify';
+      var tabs = $('musicTabs').getElementsByTagName('button');
+      for (var i = 0; i < tabs.length; i++) toggleClass(tabs[i], 'active', tabs[i].getAttribute('data-source') === Music.source);
+      toggleClass($('musicCard'), 'is-spotify', spotify);
+      toggleClass($('mProgress'), 'hidden', !spotify);
+      $('mListBtn').textContent = spotify ? 'Dispositivos' : 'Emisoras';
+      if (spotify) Spotify.render(); else Player.render();
+    }
+  };
+
+  var SPOTIFY_ICON = '<svg viewBox="0 0 24 24" width="56" height="56"><circle cx="12" cy="12" r="11" fill="#fff"/>' +
+    '<g fill="none" stroke="#0b5229" stroke-linecap="round"><path stroke-width="2.2" d="M6.5 9.3c3.8-1.2 8-.9 11.2.9"/>' +
+    '<path stroke-width="1.9" d="M7.1 12.6c3.1-.9 6.4-.6 9.1.8"/><path stroke-width="1.6" d="M7.7 15.7c2.5-.6 4.9-.4 7 .6"/></g></svg>';
+
+  var SPOTIFY_ERRORS = {
+    no_device: 'Abre Spotify en un equipo o elige uno en Dispositivos',
+    premium_required: 'Controlar Spotify requiere Premium',
+    auth_failed: 'Hay que volver a conectar Spotify',
+    not_configured: 'Spotify no está configurado',
+    forbidden: 'Spotify no permitió esa acción'
+  };
+  function spotifyError(code) { return SPOTIFY_ERRORS[code] || 'No se pudo hablar con Spotify'; }
+
+  var Spotify = {
+    s: null,            // último estado recibido de /api/spotify/state
+    at: 0,              // cuándo llegó (para avanzar la barra entre consultas)
+    err: null,
+    timer: null,
+    message: '',
+    messageUntil: 0,
+    resumeAfter: false,
+
+    poll: function () {
+      clearTimeout(Spotify.timer);
+      getJSON('/api/spotify/state', function (err, data) {
+        if (err || !data) {
+          Spotify.err = 'offline';
+        } else if (data.ok === false) {
+          Spotify.err = data.error;
+          if (data.configured === false) Spotify.s = { configured: false };
+        } else {
+          Spotify.err = null;
+          Spotify.s = data;
+          Spotify.at = Date.now();
+        }
+        Spotify.render();
+        Spotify.schedule();
+      });
+    },
+
+    // Más seguido mientras se mira y suena; muy de vez en cuando si se está en Radio.
+    schedule: function () {
+      var s = Spotify.s;
+      var viewing = Music.source === 'spotify';
+      if (s && s.configured === false && !viewing) return;
+      Spotify.timer = setTimeout(Spotify.poll, !viewing ? 60000 : s && s.isPlaying ? 5000 : 15000);
+    },
+
+    cmd: function (name, params, cb) {
+      postJSON('/api/spotify/control?' + q(extend({ cmd: name }, params)), function (err, data) {
+        var ok = !err && data && data.ok;
+        if (!ok) {
+          var code = (data && data.error) || 'offline';
+          Spotify.flash(spotifyError(code));
+          if (code === 'no_device' && Music.source === 'spotify') Devices.open();
+        }
+        setTimeout(Spotify.poll, 700);
+        if (cb) cb(ok);
+      });
+    },
+
+    toggle: function () {
+      var s = Spotify.s;
+      if (!s || s.configured === false) return Spotify.flash(spotifyError('not_configured'));
+      if (s.isPlaying) {
+        s.progressMs = Spotify.progress(Date.now());
+        s.isPlaying = false;
+        Spotify.cmd('pause');
+      } else {
+        if (Player.mode === 'radio') Player.stop();
+        if (s.active) s.isPlaying = true;
+        Spotify.at = Date.now();
+        Spotify.cmd('play');
+      }
+      Spotify.render();
+    },
+
+    // Pausa Spotify cuando empieza la radio o suena la alarma (y lo reanuda al detener la alarma).
+    pauseFor: function (reason) {
+      var s = Spotify.s;
+      if (!s || !s.isPlaying) return;
+      if (reason === 'alarm') Spotify.resumeAfter = true;
+      s.progressMs = Spotify.progress(Date.now());
+      s.isPlaying = false;
+      Spotify.cmd('pause');
+      Spotify.render();
+    },
+
+    resumeAfterAlarm: function () {
+      if (!Spotify.resumeAfter) return;
+      Spotify.resumeAfter = false;
+      if (Player.mode === 'radio') return;
+      Spotify.cmd('play');
+    },
+
+    flash: function (text) {
+      Spotify.message = text;
+      Spotify.messageUntil = Date.now() + 5000;
+      Spotify.render();
+      setTimeout(Spotify.render, 5100);
+    },
+
+    progress: function (now) {
+      var s = Spotify.s;
+      if (!s || !s.active) return 0;
+      var p = s.progressMs + (s.isPlaying ? now - Spotify.at : 0);
+      return Math.min(p, s.durationMs || p);
+    },
+
+    renderProgress: function (now) {
+      if (Music.source !== 'spotify') return;
+      var s = Spotify.s;
+      var pct = s && s.active && s.durationMs ? Spotify.progress(now) / s.durationMs * 100 : 0;
+      $('mProgress').getElementsByTagName('i')[0].style.width = pct.toFixed(2) + '%';
+    },
+
+    render: function () {
+      if (Music.source !== 'spotify') return;
+      var s = Spotify.s;
+      var title, sub, status = '', image = '', playing = false;
+
+      if (!s && !Spotify.err) {
+        title = 'Spotify';
+        sub = 'Conectando…';
+      } else if (s && s.configured === false) {
+        title = 'Conecta Spotify';
+        sub = 'Configúralo desde tu celular en ' + window.location.host + '/spotify.html';
+      } else if (!s) {
+        title = 'Spotify';
+        sub = spotifyError(Spotify.err);
+      } else if (!s.active) {
+        title = 'Nada sonando';
+        sub = 'Abre Spotify en tu celular o elige un parlante en Dispositivos';
+      } else {
+        title = s.track;
+        sub = s.artist;
+        image = s.image;
+        playing = s.isPlaying;
+        status = (playing ? 'Sonando en ' : 'En pausa · ') + (s.device ? s.device.name : '');
+      }
+      if (Spotify.err && s && s.configured !== false && Spotify.err !== 'offline') status = spotifyError(Spotify.err);
+      if (Spotify.message && Date.now() < Spotify.messageUntil) status = Spotify.message;
+
+      $('mStation').textContent = title;
+      $('mTrack').textContent = sub;
+      $('mStatus').textContent = status || ' ';
+      toggleClass($('mStatus'), 'live', false);
+
+      var art = $('mArt');
+      var key = 'sp:' + image;
+      if (art.getAttribute('data-key') !== key) {
+        art.setAttribute('data-key', key);
+        art.removeAttribute('style');
+        art.innerHTML = image ? SPOTIFY_ICON + '<img src="' + esc(image) + '" onerror="this.parentNode.removeChild(this)">' : SPOTIFY_ICON;
+      }
+
+      var btn = $('mPlay');
+      toggleClass(btn, 'playing', playing);
+      toggleClass(btn, 'loading', false);
+      Spotify.renderProgress(Date.now());
+    }
+  };
+
+  var DEVICE_ICONS = {
+    Smartphone: '<path d="M8 2h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm4 17a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/>',
+    Computer: '<path d="M3 4h18v12H3zM1 18h22v2H1z"/>',
+    TV: '<path d="M2 5h20v13H2zM8 20h8v2H8z"/>',
+    Speaker: '<path d="M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm5 9a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0-6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/>'
+  };
+
+  var Devices = {
+    list: [],
+
+    open: function () {
+      $('devices').classList.remove('hidden');
+      Devices.renderVolume();
+      Devices.load();
+      Night.apply();
+    },
+
+    close: function () {
+      $('devices').classList.add('hidden');
+    },
+
+    load: function () {
+      var box = $('devList');
+      box.innerHTML = '<div class="empty">Buscando dispositivos…</div>';
+      getJSON('/api/spotify/devices', function (err, data) {
+        if (err || !data || data.ok === false) {
+          box.innerHTML = '<div class="empty">' + esc(spotifyError(data && data.error)) + '</div>';
+          return;
+        }
+        if (data.configured === false) {
+          box.innerHTML = '<div class="empty">' + esc(spotifyError('not_configured')) + '</div>';
+          return;
+        }
+        Devices.list = data.devices || [];
+        Devices.render();
+        Devices.renderVolume();
+      });
+    },
+
+    render: function () {
+      var box = $('devList');
+      if (!Devices.list.length) {
+        box.innerHTML = '<div class="empty">No aparece ningún equipo. Abre Spotify en tu celular o computador, ' +
+          'o enciende el parlante, y vuelve a abrir esta ventana.</div>';
+        return;
+      }
+      var html = '';
+      for (var i = 0; i < Devices.list.length; i++) {
+        var d = Devices.list[i];
+        var icon = DEVICE_ICONS[d.type] || DEVICE_ICONS.Speaker;
+        html += '<button class="dev' + (d.active ? ' active' : '') + '" data-action="sp-transfer" data-idx="' + i + '">' +
+          '<svg class="dev-icon" viewBox="0 0 24 24" width="30" height="30" fill="currentColor">' + icon + '</svg>' +
+          '<span>' + esc(d.name) + '<small>' + (d.active ? 'Sonando aquí' : esc(d.type || '')) + '</small></span></button>';
+      }
+      box.innerHTML = html;
+    },
+
+    activeDevice: function () {
+      for (var i = 0; i < Devices.list.length; i++) if (Devices.list[i].active) return Devices.list[i];
+      return Spotify.s && Spotify.s.device;
+    },
+
+    renderVolume: function () {
+      var d = Devices.activeDevice();
+      $('spVol').textContent = d && d.volume != null ? d.volume + '%' : '--';
+    },
+
+    transfer: function (idx) {
+      var d = Devices.list[idx];
+      if (!d) return;
+      if (Player.mode === 'radio') Player.stop();
+      Spotify.flash('Cambiando a ' + d.name + '…');
+      Spotify.cmd('transfer', { device: d.id }, function (ok) {
+        if (!ok) return;
+        Devices.close();
+        Night.apply();
+      });
+    },
+
+    volume: function (delta) {
+      var d = Devices.activeDevice();
+      if (!d || d.volume == null) return Spotify.flash(spotifyError('no_device'));
+      d.volume = Math.max(0, Math.min(100, d.volume + delta));
+      Devices.renderVolume();
+      Spotify.cmd('volume', { value: d.volume });
     }
   };
 
@@ -1223,7 +1508,8 @@
     apply: function () {
       var h = new Date().getHours();
       var night = settings.nightDim && (h >= 23 || h < 7) && !Alarm.active &&
-        $('sheet').className.indexOf('hidden') > -1 && $('settings').className.indexOf('hidden') > -1;
+        $('sheet').className.indexOf('hidden') > -1 && $('settings').className.indexOf('hidden') > -1 &&
+        $('devices').className.indexOf('hidden') > -1;
       toggleClass($('dim'), 'on', night);
     }
   };
@@ -1274,9 +1560,15 @@
       setTimeout(function () { if (!Alarm.active) Player.alarmStop(); }, 4000);
     },
 
-    'radio-toggle': function () { Player.toggle(); },
-    'radio-next': function () { Player.step(1); },
-    'radio-prev': function () { Player.step(-1); },
+    'music-source': function (el) { Music.set(el.getAttribute('data-source')); },
+    'music-toggle': function () { if (Music.source === 'spotify') Spotify.toggle(); else Player.toggle(); },
+    'music-next': function () { if (Music.source === 'spotify') Spotify.cmd('next'); else Player.step(1); },
+    'music-prev': function () { if (Music.source === 'spotify') Spotify.cmd('previous'); else Player.step(-1); },
+    'music-list': function () { if (Music.source === 'spotify') Devices.open(); else Sheet.open(); Night.apply(); },
+
+    'devices-close': function () { Devices.close(); Night.apply(); },
+    'sp-transfer': function (el) { Devices.transfer(+el.getAttribute('data-idx')); },
+    'sp-volume': function (el) { Devices.volume(+el.getAttribute('data-delta')); },
 
     'sheet-open': function () { Sheet.open(); Night.apply(); },
     'sheet-close': function () { Sheet.close(); Night.apply(); },
@@ -1374,8 +1666,9 @@
   Clock.render(new Date());
   Weather.render();
   Timers.render();
-  Player.render();
+  Music.render();
   Weather.load();
+  Spotify.poll();
 
   var lastMinute = -1;
   function tick() {
@@ -1383,6 +1676,7 @@
     var d = new Date(now);
     Clock.render(d);
     Timers.tick(now);
+    Spotify.renderProgress(now);
     if (d.getMinutes() !== lastMinute) {
       lastMinute = d.getMinutes();
       Night.apply();

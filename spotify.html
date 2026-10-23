@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Conectar Spotify · Casa</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<style>
+  body {
+    margin: 0;
+    padding: 24px 20px 48px;
+    background: #0f1218;
+    color: #e9edf5;
+    font: 17px/1.55 -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+  main { max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 28px; margin: 0 0 6px; }
+  .lead { color: #9aa4b8; margin: 0 0 24px; }
+  ol { padding-left: 22px; }
+  li { margin-bottom: 22px; }
+  li b { color: #fff; }
+  code {
+    display: block;
+    margin: 8px 0;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: #1b2130;
+    color: #fff;
+    font: 15px/1.4 Menlo, monospace;
+    word-break: break-all;
+    -webkit-user-select: all;
+    user-select: all;
+  }
+  a { color: #1ed760; }
+  .btn {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 12px 20px;
+    border-radius: 24px;
+    background: #1ed760;
+    color: #062b14;
+    font-weight: 700;
+    text-decoration: none;
+  }
+  .status {
+    padding: 14px 16px;
+    margin-bottom: 26px;
+    border-radius: 14px;
+    background: #1b2130;
+  }
+  .status.ok { background: #0f3b22; color: #b8f5cf; }
+  .muted { color: #9aa4b8; font-size: 15px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Conectar Spotify</h1>
+  <p class="lead">El iPad de la cocina controla Spotify mientras suena en tu celular, computador o parlante. Hazlo desde tu celular o computador, no desde el iPad. Necesitas Spotify Premium.</p>
+
+  <div id="status" class="status">Revisando configuración…</div>
+
+  <ol>
+    <li>
+      Entra a <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">developer.spotify.com/dashboard</a>
+      con tu cuenta de Spotify y toca <b>Create app</b>.
+      <ul class="muted">
+        <li>Nombre y descripción: lo que quieras (por ejemplo “Casa”).</li>
+        <li>En <b>Redirect URIs</b> pega exactamente esto y toca <b>Add</b>:
+          <code id="redirect"></code></li>
+        <li>En “Which API/SDKs are you planning to use?” marca <b>Web API</b>, acepta los términos y guarda.</li>
+      </ul>
+    </li>
+    <li>
+      En la app recién creada abre <b>Settings</b>. Copia el <b>Client ID</b> y, con “View client secret”, el <b>Client secret</b>.
+      Guárdalos en Vercel: proyecto <b>casa</b> → <b>Settings</b> → <b>Environment Variables</b>, con estos nombres:
+      <code>SPOTIFY_CLIENT_ID</code><code>SPOTIFY_CLIENT_SECRET</code>
+      <span class="muted">Después avísale a Claude para que vuelva a publicar la app (o en Vercel: Deployments → ⋯ → Redeploy).</span>
+    </li>
+    <li>
+      Cuando el paso 2 esté publicado, toca:<br>
+      <a class="btn" href="/api/spotify/login">Conectar con Spotify</a>
+      <p class="muted">Spotify te pedirá permiso y luego verás una llave larga. Guárdala en Vercel igual que antes, con el nombre
+        <code>SPOTIFY_REFRESH_TOKEN</code> y vuelve a publicar. Es una llave de tu cuenta: no la pegues en chats.</p>
+    </li>
+    <li>En el iPad, en la tarjeta de música, toca <b>Spotify</b>. ¡Listo!</li>
+  </ol>
+</main>
+<script>
+  document.getElementById('redirect').textContent = location.origin + '/api/spotify/callback';
+
+  var box = document.getElementById('status');
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', '/api/spotify/state', true);
+  xhr.onload = function () {
+    var d;
+    try { d = JSON.parse(xhr.responseText); } catch (e) { d = null; }
+    if (!d) {
+      box.textContent = 'No se pudo revisar el estado.';
+    } else if (d.configured === false) {
+      box.innerHTML = 'Falta configurar: <b>' + d.missing.join(', ') + '</b>';
+    } else if (d.ok === false) {
+      box.textContent = d.error === 'auth_failed'
+        ? 'Las variables están, pero Spotify rechazó la llave. Repite el paso 3.'
+        : 'Configurado. Spotify respondió: ' + d.error;
+    } else {
+      box.className = 'status ok';
+      box.textContent = d.active
+        ? '✓ Conectado. Sonando: ' + d.track + ' — ' + d.artist
+        : '✓ Conectado. Ahora mismo no suena nada en Spotify.';
+    }
+  };
+  xhr.onerror = function () { box.textContent = 'No se pudo revisar el estado.'; };
+  xhr.send();
+</script>
+</body>
+</html>

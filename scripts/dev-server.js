@@ -47,19 +47,33 @@ const mocks = {
     ] };
   },
   nowplaying() { return { title: 'Hollis Vane - Dreams' }; },
+  'spotify/state'() {
+    return { configured: true, active: true, isPlaying: true, progressMs: 83000, durationMs: 215000, track: 'Dreams', artist: 'Hollis Vane', album: 'Night Drive', image: '', device: { id: 'd1', name: 'Parlante living', type: 'Speaker', active: true, volume: 45 } };
+  },
+  'spotify/devices'() {
+    return { configured: true, devices: [
+      { id: 'd1', name: 'Parlante living', type: 'Speaker', active: true, volume: 45 },
+      { id: 'd2', name: 'iPhone de Pablo', type: 'Smartphone', active: false, volume: 100 },
+      { id: 'd3', name: 'MacBook', type: 'Computer', active: false, volume: 70 },
+    ] };
+  },
+  'spotify/control'() { return { ok: true }; },
 };
 
 http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const query = Object.fromEntries(url.searchParams);
 
-  const api = /^\/api\/([a-z]+)$/.exec(url.pathname);
+  const api = /^\/api\/([a-z]+)(?:\/([a-z]+))?$/.exec(url.pathname);
   if (api) {
-    if (MOCK && mocks[api[1]]) {
+    const key = api[2] ? `${api[1]}/${api[2]}` : api[1];
+    if (MOCK && mocks[key]) {
       res.setHeader('Content-Type', 'application/json');
-      return res.end(JSON.stringify(mocks[api[1]](query)));
+      return res.end(JSON.stringify(mocks[key](query)));
     }
-    const file = path.join(ROOT, 'api', `${api[1]}.js`);
+    // /api/spotify/:action → api/spotify/[action].js, como en Vercel.
+    if (api[2]) query.action = api[2];
+    const file = api[2] ? path.join(ROOT, 'api', api[1], '[action].js') : path.join(ROOT, 'api', `${api[1]}.js`);
     if (!fs.existsSync(file)) { res.statusCode = 404; return res.end('not found'); }
     req.query = query;
     return require(file)(req, res);

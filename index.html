@@ -86,8 +86,11 @@
     <!-- Música -->
     <section id="musicCard" class="card card-music">
       <div class="card-head">
-        <span class="eyebrow light">Radio</span>
-        <button class="pill-btn light" data-action="sheet-open">Emisoras</button>
+        <div class="seg" id="musicTabs">
+          <button data-action="music-source" data-source="radio">Radio</button>
+          <button data-action="music-source" data-source="spotify">Spotify</button>
+        </div>
+        <button id="mListBtn" class="pill-btn light" data-action="music-list">Emisoras</button>
       </div>
       <div class="m-now">
         <div id="mArt" class="art"></div>
@@ -97,16 +100,17 @@
           <div id="mStatus" class="m-status">&nbsp;</div>
         </div>
       </div>
+      <div id="mProgress" class="m-progress hidden"><i></i></div>
       <div class="m-controls">
-        <button class="ctl" data-action="radio-prev" aria-label="Anterior">
+        <button class="ctl" data-action="music-prev" aria-label="Anterior">
           <svg viewBox="0 0 24 24" width="30" height="30"><path fill="currentColor" d="M6 5h2v14H6zM20 5v14L9 12z"/></svg>
         </button>
-        <button id="mPlay" class="ctl ctl-main" data-action="radio-toggle" aria-label="Reproducir">
+        <button id="mPlay" class="ctl ctl-main" data-action="music-toggle" aria-label="Reproducir">
           <svg class="i-play" viewBox="0 0 24 24" width="34" height="34"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
           <svg class="i-pause" viewBox="0 0 24 24" width="34" height="34"><path fill="currentColor" d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
           <span class="spinner"></span>
         </button>
-        <button class="ctl" data-action="radio-next" aria-label="Siguiente">
+        <button class="ctl" data-action="music-next" aria-label="Siguiente">
           <svg viewBox="0 0 24 24" width="30" height="30"><path fill="currentColor" d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg>
         </button>
       </div>
@@ -152,6 +156,25 @@
       <button class="btn btn-accent" type="submit">Buscar</button>
     </form>
     <div id="sheetList" class="sheet-list scroll"></div>
+  </div>
+</div>
+
+<!-- Dispositivos de Spotify -->
+<div id="devices" class="sheet hidden">
+  <div class="sheet-panel settings-panel">
+    <div class="sheet-head">
+      <span class="sheet-title">Spotify</span>
+      <button class="icon-btn" data-action="devices-close" aria-label="Cerrar">
+        <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7l-1.4-1.4L9.2 12 2.9 5.7l1.4-1.4 6.3 6.3 6.3-6.3z" transform="translate(1.5 0)"/></svg>
+      </button>
+    </div>
+    <div class="vol-row">
+      <button class="btn btn-ghost" data-action="sp-volume" data-delta="-10">− Bajar</button>
+      <div class="vol-value"><span id="spVol">--</span><small>volumen</small></div>
+      <button class="btn btn-ghost" data-action="sp-volume" data-delta="10">+ Subir</button>
+    </div>
+    <div class="set-label">Reproducir en:</div>
+    <div id="devList" class="sheet-list scroll"></div>
   </div>
 </div>
 
